@@ -1,0 +1,176 @@
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800   1) /*
+ef0c9f0c5b8e pkg/util/node/node.go (<djmm@google.com>                 1464913558 -0700   2) Copyright 2015 The Kubernetes Authors.
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800   3) 
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800   4) Licensed under the Apache License, Version 2.0 (the "License");
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800   5) you may not use this file except in compliance with the License.
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800   6) You may obtain a copy of the License at
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800   7) 
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800   8)     http://www.apache.org/licenses/LICENSE-2.0
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800   9) 
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  10) Unless required by applicable law or agreed to in writing, software
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  11) distributed under the License is distributed on an "AS IS" BASIS,
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  12) WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  13) See the License for the specific language governing permissions and
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  14) limitations under the License.
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  15) */
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  16) 
+2d85e4a094b1 pkg/util/node/node.go (<cjcullen@google.com>             1432681980 -0700  17) package node
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  18) 
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  19) import (
+3aa59f7f3077 pkg/util/node/node.go (<mikedanese@google.com>           1581128207 -0800  20) 	"context"
+2d85e4a094b1 pkg/util/node/node.go (<cjcullen@google.com>             1432681980 -0700  21) 	"fmt"
+2d85e4a094b1 pkg/util/node/node.go (<cjcullen@google.com>             1432681980 -0700  22) 	"net"
+832363442dee pkg/util/node/node.go (<davanum@gmail.com>               1470249370 -0400  23) 	"os"
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  24) 	"strings"
+59ea5c088b62 pkg/util/node/node.go (<taotaotheripper@gmail.com>       1468204378 -0700  25) 	"time"
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  26) 
+442a69c3bdf6 pkg/util/node/node.go (<davanum@gmail.com>               1587151506 -0400  27) 	"k8s.io/klog/v2"
+0d57ec293845 pkg/util/node/node.go (<islinwb@gmail.com>               1538987971 +0800  28) 
+a864fd210025 pkg/util/node/node.go (<zounengren@cmss.chinamobile.com> 1570671894 +0800  29) 	v1 "k8s.io/api/core/v1"
+6a4d5cd7cc58 pkg/util/node/node.go (<deads@redhat.com>                1484143788 -0500  30) 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530  31) 	"k8s.io/apimachinery/pkg/util/wait"
+29c1b81d4c54 pkg/util/node/node.go (<jacobsimpson@google.com>         1498251397 -0700  32) 	clientset "k8s.io/client-go/kubernetes"
+0cd75e8fec62 pkg/util/node/node.go (<aojea@redhat.com>                1629414974 +0200  33) 	netutils "k8s.io/utils/net"
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  34) )
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  35) 
+a5bdc5f50922 pkg/util/node/node.go (<ramanathana@google.com>          1478030346 -0700  36) const (
+0ecff590bb29 pkg/util/node/node.go (<tan.shanshan@zte.com.cn>         1536738622 +0800  37) 	// NodeUnreachablePodReason is the reason on a pod when its state cannot be confirmed as kubelet is unresponsive
+0ecff590bb29 pkg/util/node/node.go (<tan.shanshan@zte.com.cn>         1536738622 +0800  38) 	// on the node it is (was) running.
+0ecff590bb29 pkg/util/node/node.go (<tan.shanshan@zte.com.cn>         1536738622 +0800  39) 	NodeUnreachablePodReason = "NodeLost"
+0ecff590bb29 pkg/util/node/node.go (<tan.shanshan@zte.com.cn>         1536738622 +0800  40) 	// NodeUnreachablePodMessage is the message on a pod when its state cannot be confirmed as kubelet is unresponsive
+a5bdc5f50922 pkg/util/node/node.go (<ramanathana@google.com>          1478030346 -0700  41) 	// on the node it is (was) running.
+a5bdc5f50922 pkg/util/node/node.go (<ramanathana@google.com>          1478030346 -0700  42) 	NodeUnreachablePodMessage = "Node %v which was running pod %v is unresponsive"
+a5bdc5f50922 pkg/util/node/node.go (<ramanathana@google.com>          1478030346 -0700  43) )
+a5bdc5f50922 pkg/util/node/node.go (<ramanathana@google.com>          1478030346 -0700  44) 
+3953f9010272 pkg/util/node/node.go (<madaxa@cn.ibm.com>               1496997684 +0800  45) // GetHostname returns OS's hostname if 'hostnameOverride' is empty; otherwise, return 'hostnameOverride'.
+b3dfe0c652ac pkg/util/node/node.go (<stephenhsu90@gmail.com>          1528266975 +0800  46) func GetHostname(hostnameOverride string) (string, error) {
+b3dfe0c652ac pkg/util/node/node.go (<stephenhsu90@gmail.com>          1528266975 +0800  47) 	hostName := hostnameOverride
+b3dfe0c652ac pkg/util/node/node.go (<stephenhsu90@gmail.com>          1528266975 +0800  48) 	if len(hostName) == 0 {
+b3dfe0c652ac pkg/util/node/node.go (<stephenhsu90@gmail.com>          1528266975 +0800  49) 		nodeName, err := os.Hostname()
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  50) 		if err != nil {
+b3dfe0c652ac pkg/util/node/node.go (<stephenhsu90@gmail.com>          1528266975 +0800  51) 			return "", fmt.Errorf("couldn't determine hostname: %v", err)
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  52) 		}
+b3dfe0c652ac pkg/util/node/node.go (<stephenhsu90@gmail.com>          1528266975 +0800  53) 		hostName = nodeName
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  54) 	}
+b3dfe0c652ac pkg/util/node/node.go (<stephenhsu90@gmail.com>          1528266975 +0800  55) 
+b3dfe0c652ac pkg/util/node/node.go (<stephenhsu90@gmail.com>          1528266975 +0800  56) 	// Trim whitespaces first to avoid getting an empty hostname
+b3dfe0c652ac pkg/util/node/node.go (<stephenhsu90@gmail.com>          1528266975 +0800  57) 	// For linux, the hostname is read from file /proc/sys/kernel/hostname directly
+b3dfe0c652ac pkg/util/node/node.go (<stephenhsu90@gmail.com>          1528266975 +0800  58) 	hostName = strings.TrimSpace(hostName)
+b3dfe0c652ac pkg/util/node/node.go (<stephenhsu90@gmail.com>          1528266975 +0800  59) 	if len(hostName) == 0 {
+b3dfe0c652ac pkg/util/node/node.go (<stephenhsu90@gmail.com>          1528266975 +0800  60) 		return "", fmt.Errorf("empty hostname is invalid")
+b3dfe0c652ac pkg/util/node/node.go (<stephenhsu90@gmail.com>          1528266975 +0800  61) 	}
+b3dfe0c652ac pkg/util/node/node.go (<stephenhsu90@gmail.com>          1528266975 +0800  62) 	return strings.ToLower(hostName), nil
+f718957a7977 pkg/util/node.go      (<dawnchen@google.com>             1420487061 -0800  63) }
+2d85e4a094b1 pkg/util/node/node.go (<cjcullen@google.com>             1432681980 -0700  64) 
+d92ee41e44b4 pkg/util/node/node.go (<wfender@google.com>              1544211079 -0800  65) // NoMatchError is a typed implementation of the error interface. It indicates a failure to get a matching Node.
+d92ee41e44b4 pkg/util/node/node.go (<wfender@google.com>              1544211079 -0800  66) type NoMatchError struct {
+d92ee41e44b4 pkg/util/node/node.go (<wfender@google.com>              1544211079 -0800  67) 	addresses []v1.NodeAddress
+d92ee41e44b4 pkg/util/node/node.go (<wfender@google.com>              1544211079 -0800  68) }
+d92ee41e44b4 pkg/util/node/node.go (<wfender@google.com>              1544211079 -0800  69) 
+d92ee41e44b4 pkg/util/node/node.go (<wfender@google.com>              1544211079 -0800  70) // Error is the implementation of the conventional interface for
+d92ee41e44b4 pkg/util/node/node.go (<wfender@google.com>              1544211079 -0800  71) // representing an error condition, with the nil value representing no error.
+d92ee41e44b4 pkg/util/node/node.go (<wfender@google.com>              1544211079 -0800  72) func (e *NoMatchError) Error() string {
+d92ee41e44b4 pkg/util/node/node.go (<wfender@google.com>              1544211079 -0800  73) 	return fmt.Sprintf("no preferred addresses found; known addresses: %v", e.addresses)
+d92ee41e44b4 pkg/util/node/node.go (<wfender@google.com>              1544211079 -0800  74) }
+d92ee41e44b4 pkg/util/node/node.go (<wfender@google.com>              1544211079 -0800  75) 
+1a7f7c539919 pkg/util/node/node.go (<jliggitt@redhat.com>             1475779952 -0400  76) // GetPreferredNodeAddress returns the address of the provided node, using the provided preference order.
+1a7f7c539919 pkg/util/node/node.go (<jliggitt@redhat.com>             1475779952 -0400  77) // If none of the preferred address types are found, an error is returned.
+31ed340eecc3 pkg/util/node/node.go (<xuchao@google.com>               1479504704 -0800  78) func GetPreferredNodeAddress(node *v1.Node, preferredAddressTypes []v1.NodeAddressType) (string, error) {
+1a7f7c539919 pkg/util/node/node.go (<jliggitt@redhat.com>             1475779952 -0400  79) 	for _, addressType := range preferredAddressTypes {
+1a7f7c539919 pkg/util/node/node.go (<jliggitt@redhat.com>             1475779952 -0400  80) 		for _, address := range node.Status.Addresses {
+1a7f7c539919 pkg/util/node/node.go (<jliggitt@redhat.com>             1475779952 -0400  81) 			if address.Type == addressType {
+1a7f7c539919 pkg/util/node/node.go (<jliggitt@redhat.com>             1475779952 -0400  82) 				return address.Address, nil
+1a7f7c539919 pkg/util/node/node.go (<jliggitt@redhat.com>             1475779952 -0400  83) 			}
+1a7f7c539919 pkg/util/node/node.go (<jliggitt@redhat.com>             1475779952 -0400  84) 		}
+1a7f7c539919 pkg/util/node/node.go (<jliggitt@redhat.com>             1475779952 -0400  85) 	}
+d92ee41e44b4 pkg/util/node/node.go (<wfender@google.com>              1544211079 -0800  86) 	return "", &NoMatchError{addresses: node.Status.Addresses}
+1a7f7c539919 pkg/util/node/node.go (<jliggitt@redhat.com>             1475779952 -0400  87) }
+1a7f7c539919 pkg/util/node/node.go (<jliggitt@redhat.com>             1475779952 -0400  88) 
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400  89) // GetNodeHostIPs returns the provided node's IP(s); either a single "primary IP" for the
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400  90) // node in a single-stack cluster, or a dual-stack pair of IPs in a dual-stack cluster
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400  91) // (for nodes that actually have dual-stack IPs). Among other things, the IPs returned
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400  92) // from this function are used as the `.status.PodIPs` values for host-network pods on the
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400  93) // node, and the first IP is used as the `.status.HostIP` for all pods on the node.
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400  94) func GetNodeHostIPs(node *v1.Node) ([]net.IP, error) {
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400  95) 	// Re-sort the addresses with InternalIPs first and then ExternalIPs
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400  96) 	allIPs := make([]net.IP, 0, len(node.Status.Addresses))
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400  97) 	for _, addr := range node.Status.Addresses {
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400  98) 		if addr.Type == v1.NodeInternalIP {
+0cd75e8fec62 pkg/util/node/node.go (<aojea@redhat.com>                1629414974 +0200  99) 			ip := netutils.ParseIPSloppy(addr.Address)
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 100) 			if ip != nil {
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 101) 				allIPs = append(allIPs, ip)
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 102) 			}
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 103) 		}
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 104) 	}
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 105) 	for _, addr := range node.Status.Addresses {
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 106) 		if addr.Type == v1.NodeExternalIP {
+0cd75e8fec62 pkg/util/node/node.go (<aojea@redhat.com>                1629414974 +0200 107) 			ip := netutils.ParseIPSloppy(addr.Address)
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 108) 			if ip != nil {
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 109) 				allIPs = append(allIPs, ip)
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 110) 			}
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 111) 		}
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 112) 	}
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 113) 	if len(allIPs) == 0 {
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 114) 		return nil, fmt.Errorf("host IP unknown; known addresses: %v", node.Status.Addresses)
+31ed340eecc3 pkg/util/node/node.go (<xuchao@google.com>               1479504704 -0800 115) 	}
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 116) 
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 117) 	nodeIPs := []net.IP{allIPs[0]}
+a53e2eaeaba0 pkg/util/node/node.go (<khnidk@outlook.com>              1632526222 -0700 118) 	for _, ip := range allIPs {
+a53e2eaeaba0 pkg/util/node/node.go (<khnidk@outlook.com>              1632526222 -0700 119) 		if netutils.IsIPv6(ip) != netutils.IsIPv6(nodeIPs[0]) {
+a53e2eaeaba0 pkg/util/node/node.go (<khnidk@outlook.com>              1632526222 -0700 120) 			nodeIPs = append(nodeIPs, ip)
+a53e2eaeaba0 pkg/util/node/node.go (<khnidk@outlook.com>              1632526222 -0700 121) 			break
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 122) 		}
+31ed340eecc3 pkg/util/node/node.go (<xuchao@google.com>               1479504704 -0800 123) 	}
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 124) 
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 125) 	return nodeIPs, nil
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 126) }
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 127) 
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 128) // GetNodeHostIP returns the provided node's "primary" IP; see GetNodeHostIPs for more details
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 129) func GetNodeHostIP(node *v1.Node) (net.IP, error) {
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 130) 	ips, err := GetNodeHostIPs(node)
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 131) 	if err != nil {
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 132) 		return nil, err
+31ed340eecc3 pkg/util/node/node.go (<xuchao@google.com>               1479504704 -0800 133) 	}
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 134) 	// GetNodeHostIPs always returns at least one IP if it didn't return an error
+971477d9b5cc pkg/util/node/node.go (<danwinship@redhat.com>           1601564138 -0400 135) 	return ips[0], nil
+31ed340eecc3 pkg/util/node/node.go (<xuchao@google.com>               1479504704 -0800 136) }
+31ed340eecc3 pkg/util/node/node.go (<xuchao@google.com>               1479504704 -0800 137) 
+0b43753be78a pkg/util/node/node.go (<danwinship@redhat.com>           1601565646 -0400 138) // GetNodeIP returns an IP (as with GetNodeHostIP) for the node with the provided name.
+0b43753be78a pkg/util/node/node.go (<danwinship@redhat.com>           1601565646 -0400 139) // If required, it will wait for the node to be created.
+0b43753be78a pkg/util/node/node.go (<danwinship@redhat.com>           1601565646 -0400 140) func GetNodeIP(client clientset.Interface, name string) net.IP {
+0d57ec293845 pkg/util/node/node.go (<islinwb@gmail.com>               1538987971 +0800 141) 	var nodeIP net.IP
+2862f3ec94e1 pkg/util/node/node.go (<subrata.turs@gmail.com>          1558725410 +0530 142) 	backoff := wait.Backoff{
+3bb3db1d36ed pkg/util/node/node.go (<mspreitz@us.ibm.com>             1566610632 -0400 143) 		Steps:    6,
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 144) 		Duration: 1 * time.Second,
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 145) 		Factor:   2.0,
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 146) 		Jitter:   0.2,
+0d57ec293845 pkg/util/node/node.go (<islinwb@gmail.com>               1538987971 +0800 147) 	}
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 148) 
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 149) 	err := wait.ExponentialBackoff(backoff, func() (bool, error) {
+0b43753be78a pkg/util/node/node.go (<danwinship@redhat.com>           1601565646 -0400 150) 		node, err := client.CoreV1().Nodes().Get(context.TODO(), name, metav1.GetOptions{})
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 151) 		if err != nil {
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 152) 			klog.Errorf("Failed to retrieve node info: %v", err)
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 153) 			return false, nil
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 154) 		}
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 155) 		nodeIP, err = GetNodeHostIP(node)
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 156) 		if err != nil {
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 157) 			klog.Errorf("Failed to retrieve node IP: %v", err)
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 158) 			return false, err
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 159) 		}
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 160) 		return true, nil
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 161) 	})
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 162) 	if err == nil {
+dd9402f4514c pkg/util/node/node.go (<subrata.turs@gmail.com>          1556391318 +0530 163) 		klog.Infof("Successfully retrieved node IP: %v", nodeIP)
+0d57ec293845 pkg/util/node/node.go (<islinwb@gmail.com>               1538987971 +0800 164) 	}
+0d57ec293845 pkg/util/node/node.go (<islinwb@gmail.com>               1538987971 +0800 165) 	return nodeIP
+0d57ec293845 pkg/util/node/node.go (<islinwb@gmail.com>               1538987971 +0800 166) }
+c00975370a5b pkg/util/node/node.go (<sonasingh46@gmail.com>           1648311801 +0530 167) 
+c00975370a5b pkg/util/node/node.go (<sonasingh46@gmail.com>           1648311801 +0530 168) // IsNodeReady returns true if a node is ready; false otherwise.
+c00975370a5b pkg/util/node/node.go (<sonasingh46@gmail.com>           1648311801 +0530 169) func IsNodeReady(node *v1.Node) bool {
+c00975370a5b pkg/util/node/node.go (<sonasingh46@gmail.com>           1648311801 +0530 170) 	for _, c := range node.Status.Conditions {
+c00975370a5b pkg/util/node/node.go (<sonasingh46@gmail.com>           1648311801 +0530 171) 		if c.Type == v1.NodeReady {
+c00975370a5b pkg/util/node/node.go (<sonasingh46@gmail.com>           1648311801 +0530 172) 			return c.Status == v1.ConditionTrue
+c00975370a5b pkg/util/node/node.go (<sonasingh46@gmail.com>           1648311801 +0530 173) 		}
+c00975370a5b pkg/util/node/node.go (<sonasingh46@gmail.com>           1648311801 +0530 174) 	}
+c00975370a5b pkg/util/node/node.go (<sonasingh46@gmail.com>           1648311801 +0530 175) 	return false
+c00975370a5b pkg/util/node/node.go (<sonasingh46@gmail.com>           1648311801 +0530 176) }
