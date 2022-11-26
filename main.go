@@ -1,14 +1,9 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
-	"errors"
 	"fmt"
 	"go/ast"
 	"log"
-	"os/exec"
-	"strings"
 	"time"
 
 	"golang.org/x/tools/go/analysis"
@@ -27,10 +22,25 @@ var Analyzer = &analysis.Analyzer{
 func run(pass *analysis.Pass) (interface{}, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
+	gitStatsProvider := &ProcessGitProvider{}
+	stats := SimpleStats{
+		GitProider: gitStatsProvider,
+	}
+
 	inspect.Preorder([]ast.Node{&ast.FuncDecl{}}, func(n ast.Node) {
 		fn, ok := n.(*ast.FuncDecl)
 		if !ok || fn == nil {
 			return
+		}
+
+		filename := pass.Fset.Position(fn.Pos()).Filename
+
+		functionLineNumStart := pass.Fset.Position(fn.Pos()).Line
+		functionLineNumEnd := pass.Fset.Position(fn.End()).Line
+
+		functionLastUpdatedAt, err := stats.CommmentLastUpdatedAt(filename, functionLineNumStart, functionLineNumEnd)
+		if err != nil {
+			log.Println(err)
 		}
 
 		cg := fn.Doc
@@ -42,129 +52,58 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
-		filename := pass.Fset.Position(cg.Pos()).Filename
-		start := pass.Fset.Position(cg.Pos()).Line
-		end := pass.Fset.Position(cg.End()).Line
+		commentLineNumStart := pass.Fset.Position(cg.Pos()).Line
+		commentLineNumEnd := pass.Fset.Position(cg.End()).Line
 
-		log.Println(filename, start, end, cg.List[0].Text)
+		if functionLineNumStart >= commentLineNumEnd {
+			log.Println("function overlaps comment line numbers")
+		}
+
+		commentLastUpdatedAt, err := stats.CommmentLastUpdatedAt(filename, commentLineNumStart, commentLineNumEnd)
+		if err != nil {
+			log.Println(err)
+		}
+
+		log.Println(filename, "function", functionLineNumStart, functionLineNumEnd, functionLastUpdatedAt, "comment", commentLineNumStart, commentLineNumEnd, commentLastUpdatedAt, cg.List[0].Text)
 	})
 
 	return nil, nil
 }
 
+type GitProider interface {
+	CommitForLine(filename string, line int) (string, error)
+	LastUpdateForLine(filename string, line int) (time.Time, error)
+}
+
+type SimpleStats struct {
+	GitProider GitProider
+}
+
+func (s SimpleStats) lineRangeLastUpdatedAt(filename string, lineStart int, lineEnd int) (time.Time, error) {
+	var maxTime time.Time
+	for i := lineStart; i <= lineEnd; i++ {
+		lineUpdatedTime, err := s.GitProider.LastUpdateForLine(filename, i)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("can not get last updated at: %w", err)
+		}
+		if lineUpdatedTime.After(maxTime) {
+			maxTime = lineUpdatedTime
+		}
+	}
+	return maxTime, nil
+}
+
+func (s SimpleStats) CommmentLastUpdatedAt(filename string, lineStart int, lineEnd int) (time.Time, error) {
+	return s.lineRangeLastUpdatedAt(filename, lineStart, lineEnd)
+}
+
+func (s SimpleStats) FunctionLastUpdatedAt(filename string, lineStart int, lineEnd int) (time.Time, error) {
+	return s.lineRangeLastUpdatedAt(filename, lineStart, lineEnd)
+}
+
 type DetailsForFile struct {
 	CommitForLine     map[int]string
 	LastUpdateForLine map[int]time.Time
-}
-
-// ProcessGitProvider makes OS process calls to git to fech data.
-// Utilizes human-readable git blame output.
-// TODO: Caches data per file.
-type ProcessGitProvider struct {
-	Files map[string]DetailsForFile
-}
-
-func (s ProcessGitProvider) processFile(filename string) error {
-	cmd := exec.Command("git", "blame", "-t", "-e", filename)
-
-	var stderr, stdout bytes.Buffer
-	cmd.Stderr = &stderr
-	cmd.Stdout = &stdout
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("can not execute command: %w", err)
-	}
-
-	if stderr.Len() > 0 {
-		return fmt.Errorf("stderr > 0: %s", stderr.String())
-	}
-
-	// parse git blame to get line details for whole file
-	commitForLine := make(map[int]string)
-	lastUpdateForLine := make(map[int]time.Time)
-
-	scanner := bufio.NewScanner(&stdout)
-	for scanner.Scan() {
-		// last line can be empty line in blame and in go file
-		// not counted towards lines in source code
-		line := scanner.Text()
-		if len(line) == 0 {
-			continue
-		}
-
-		lineDetails, err := parseBlameLine(line)
-		if err != nil {
-			log.Println("error at line: %s", err)
-			continue
-		}
-
-		commitForLine[lineDetails.lineNumber] = lineDetails.commit
-		lastUpdateForLine[lineDetails.lineNumber] = lineDetails.createdAt
-	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("can not scan: %w", err)
-	}
-
-	// check that all lines collected
-	if len(commitForLine) == 0 || len(lastUpdateForLine) == 0 {
-		return errors.New("missing lines details")
-	}
-	if len(commitForLine) != len(lastUpdateForLine) {
-		return fmt.Errorf("num lines with details mismatch")
-	}
-	// check line numbers are continious
-	maxLine := 1
-	for k := range commitForLine {
-		if k > maxLine {
-			maxLine = k
-		}
-	}
-	for i := 1; i <= maxLine; i++ {
-		if _, ok := commitForLine[i]; !ok {
-			return fmt.Errorf("missing line(%d)", i)
-		}
-		if _, ok := lastUpdateForLine[i]; !ok {
-			return fmt.Errorf("missing line(%d)", i)
-		}
-	}
-
-	// store
-	if s.Files == nil {
-		s.Files = make(map[string]DetailsForFile)
-	}
-	s.Files[filename] = DetailsForFile{
-		CommitForLine:     commitForLine,
-		LastUpdateForLine: lastUpdateForLine,
-	}
-
-	return nil
-}
-
-type blameLine struct {
-	lineNumber int
-	commit     string
-	createdAt  time.Time
-}
-
-// Example:
-// ef0c9f0c5b8e pkg/util/node/node.go (<djmm@google.com>                 1464913558 -0700   2) Copyright 2015 The Kubernetes Authors.
-func parseBlameLine(line string) (blameLine, error) {
-	fields := strings.Fields(line)
-	return blameLine{}, nil
-}
-
-func (s ProcessGitProvider) CommitForLine(filename string, line int) string {
-	if _, ok := s.Files[filename]; !ok {
-		s.processFile(filename)
-	}
-	return s.Files[filename].CommitForLine[line]
-}
-
-func (s ProcessGitProvider) LastUpdateForLine(filename string, line int) time.Time {
-	if _, ok := s.Files[filename]; !ok {
-		s.processFile(filename)
-	}
-	return s.Files[filename].LastUpdateForLine[line]
 }
 
 func main() { singlechecker.Main(Analyzer) }
