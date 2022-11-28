@@ -1,7 +1,7 @@
 # 🐢 go-commentage
 
 How far behind are comments compared to code? Are they being updated?
-Inspired by "Clean Code" by Robert C. Martin, this `go vet` compatible tool collects details on how far comments drift from code they describe.
+Inspired by "Clean Code" by Robert C. Martin, this `go vet` compatible tool analyses AST and `git` and collects details on how far comments drift from code they describe.
 
 ```bash
 go-commentage ./...
