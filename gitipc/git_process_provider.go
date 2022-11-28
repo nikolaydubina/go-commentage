@@ -1,4 +1,4 @@
-package main
+package gitipc
 
 import (
 	"bufio"
@@ -11,11 +11,16 @@ import (
 	"time"
 )
 
+type detailsForFile struct {
+	CommitForLine     map[int]string
+	LastUpdateForLine map[int]time.Time
+}
+
 // ProcessGitProvider makes OS process calls to git to fech data.
 // Utilizes human-readable git blame output.
 // TODO: Caches data per file.
 type ProcessGitProvider struct {
-	Files map[string]DetailsForFile
+	Files map[string]detailsForFile
 }
 
 func (s *ProcessGitProvider) processFile(filename string) error {
@@ -38,6 +43,7 @@ func (s *ProcessGitProvider) processFile(filename string) error {
 	lastUpdateForLine := make(map[int]time.Time)
 
 	scanner := bufio.NewScanner(&stdout)
+	lineNumber := 1 // start from 1 to match go ast
 	for scanner.Scan() {
 		// last line can be empty line in blame and in go file
 		// not counted towards lines in source code
@@ -51,8 +57,10 @@ func (s *ProcessGitProvider) processFile(filename string) error {
 			return fmt.Errorf("error at line(%s): %w", line, err)
 		}
 
-		commitForLine[lineDetails.lineNumber] = lineDetails.commit
-		lastUpdateForLine[lineDetails.lineNumber] = lineDetails.createdAt
+		commitForLine[lineNumber] = lineDetails.commit
+		lastUpdateForLine[lineNumber] = lineDetails.createdAt
+
+		lineNumber++
 	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("can not scan: %w", err)
@@ -65,27 +73,12 @@ func (s *ProcessGitProvider) processFile(filename string) error {
 	if len(commitForLine) != len(lastUpdateForLine) {
 		return fmt.Errorf("num lines with details mismatch")
 	}
-	// check line numbers are continious
-	maxLine := 1
-	for k := range commitForLine {
-		if k > maxLine {
-			maxLine = k
-		}
-	}
-	for i := 1; i <= maxLine; i++ {
-		if _, ok := commitForLine[i]; !ok {
-			return fmt.Errorf("missing line(%d)", i)
-		}
-		if _, ok := lastUpdateForLine[i]; !ok {
-			return fmt.Errorf("missing line(%d)", i)
-		}
-	}
 
 	// store
 	if s.Files == nil {
-		s.Files = make(map[string]DetailsForFile)
+		s.Files = make(map[string]detailsForFile)
 	}
-	s.Files[filename] = DetailsForFile{
+	s.Files[filename] = detailsForFile{
 		CommitForLine:     commitForLine,
 		LastUpdateForLine: lastUpdateForLine,
 	}
@@ -93,40 +86,35 @@ func (s *ProcessGitProvider) processFile(filename string) error {
 	return nil
 }
 
-type blameLine struct {
-	lineNumber int
-	commit     string
-	createdAt  time.Time
+type lineDetails struct {
+	commit    string
+	createdAt time.Time
 }
 
-// Example:
-// ef0c9f0c5b8e pkg/util/node/node.go (<djmm@google.com>                 1464913558 -0700   2) Copyright 2015 The Kubernetes Authors.
-func parseBlameLine(line string) (blameLine, error) {
+func parseBlameLine(line string) (ld lineDetails, err error) {
 	fields := strings.Fields(line)
-	if len(fields) < 6 {
-		return blameLine{}, errors.New("wrong number of fields")
+	if len(fields) < 4 {
+		return ld, errors.New("wrong number of fields")
 	}
 
-	var lineDetails blameLine
+	ld.commit = fields[0]
 
-	lineDetails.commit = fields[0]
+	// created at
+	idxTimeStamp := 3
 
-	timestamp, err := strconv.ParseInt(fields[3], 10, 64)
+	// filename sometimes can be omitted
+	if fields[1][0] == '(' {
+		idxTimeStamp = 2
+	}
+
+	rawTimeStamp := fields[idxTimeStamp]
+	timestamp, err := strconv.ParseInt(rawTimeStamp, 10, 64)
 	if err != nil {
-		return blameLine{}, fmt.Errorf("non-interger timestamp(%s): %w", fields[3], err)
+		return ld, fmt.Errorf("bad timestamp(%s): %w", rawTimeStamp, err)
 	}
-	lineDetails.createdAt = time.Unix(timestamp, 0)
+	ld.createdAt = time.Unix(timestamp, 0)
 
-	lineNumberWithBracket := fields[5]
-	if !strings.HasSuffix(lineNumberWithBracket, ")") {
-		return blameLine{}, fmt.Errorf("expected to have '<line-number>)' but got(%s)", fields[5])
-	}
-	lineDetails.lineNumber, err = strconv.Atoi(lineNumberWithBracket[:len(lineNumberWithBracket)-1])
-	if err != nil {
-		return blameLine{}, fmt.Errorf("wrong number: %w", err)
-	}
-
-	return lineDetails, nil
+	return ld, err
 }
 
 func (s *ProcessGitProvider) CommitForLine(filename string, line int) (string, error) {
