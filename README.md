@@ -28,12 +28,6 @@ You need to have `git` with version `>=2.37`.
 go install github.com/nikolaydubina/go-commentage
 ```
 
-### Examples
-
-#### [kubernetes](https://github.com/kubernetes/kubernetes)
-
-TODO
-
 ### Heuristics
 
 #### Simple Age Difference
