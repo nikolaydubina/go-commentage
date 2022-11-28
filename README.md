@@ -52,6 +52,7 @@ It is useful to differentiate between updates.
 ### References
 
 * https://git-scm.com/docs/git-blame
+* https://git-scm.com/docs/git-rev-list
 * https://github.com/nishanths/exhaustive
 * https://github.com/kubernetes/kubernetes
 
