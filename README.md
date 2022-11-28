@@ -1,4 +1,4 @@
-# go-commentage
+# 🐢 go-commentage
 
 How far behind are comments compared to code? Are they being updated?
 Inspired by "Clean Code" by Robert C. Martin, this `go vet` compatible tool collects details on how far comments drift from code they describe.
