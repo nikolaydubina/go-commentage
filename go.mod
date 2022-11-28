@@ -1,4 +1,4 @@
-module github.com/nikolaydubina/go-comment-age
+module github.com/nikolaydubina/go-commentage
 
 go 1.18
 

@@ -1,4 +1,4 @@
-# go-comment-age
+# go-commentage
 
 > Are my comments being updated together with code?
 

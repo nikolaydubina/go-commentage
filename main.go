@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/nikolaydubina/go-comment-age/commentage"
+	"github.com/nikolaydubina/go-commentage/commentage"
 	"golang.org/x/tools/go/analysis/singlechecker"
 )
 

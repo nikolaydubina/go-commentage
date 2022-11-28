@@ -13,5 +13,5 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
-.go-comment-age
 go-comment-age
+go-commentage
