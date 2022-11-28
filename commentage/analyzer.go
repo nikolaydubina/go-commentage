@@ -18,6 +18,18 @@ var Analyzer = &analysis.Analyzer{
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 }
 
+var (
+	enableTimeInfo   bool
+	enableCommitInfo bool
+	verbose          bool
+)
+
+func init() {
+	Analyzer.Flags.BoolVar(&enableTimeInfo, "time", true, `enable time collection`)
+	Analyzer.Flags.BoolVar(&enableCommitInfo, "commit", false, `enable commit collection`)
+	Analyzer.Flags.BoolVar(&verbose, "verbose", false, `return diagnostics with more details`)
+}
+
 func run(pass *analysis.Pass) (_ interface{}, errf error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
@@ -41,18 +53,6 @@ func run(pass *analysis.Pass) (_ interface{}, errf error) {
 		functionLineNumStart := pass.Fset.Position(fn.Pos()).Line
 		functionLineNumEnd := pass.Fset.Position(fn.End()).Line
 
-		functionLastUpdatedAt, err := stats.CommmentLastUpdatedAt(filename, functionLineNumStart, functionLineNumEnd)
-		if err != nil {
-			errf = err
-			return
-		}
-
-		functionLastCommit, err := stats.LastCommitForRange(filename, functionLineNumStart, functionLineNumEnd)
-		if err != nil {
-			errf = err
-			return
-		}
-
 		fndoc := fn.Doc
 		if fndoc == nil {
 			return
@@ -71,34 +71,64 @@ func run(pass *analysis.Pass) (_ interface{}, errf error) {
 			return
 		}
 
-		commentLastUpdatedAt, err := stats.CommmentLastUpdatedAt(filename, docLineNumStart, docLineNumEnd)
-		if err != nil {
-			errf = err
-			return
-		}
-
-		commentLastCommit, err := stats.LastCommitForRange(filename, docLineNumStart, docLineNumEnd)
-		if err != nil {
-			errf = err
-			return
-		}
-
-		commentBehindCommits, err := stats.CommitDifference(filename, docLineNumStart, docLineNumEnd, functionLineNumStart, functionLineNumEnd)
-		if err != nil {
-			errf = err
-			return
-		}
-
+		// compute stats
 		fnstat := FunctionStats{
-			Name:             fn.Name.Name,
-			LastCommit:       functionLastCommit,
-			LastUpdatedAt:    functionLastUpdatedAt,
-			DocLastUpdatedAt: commentLastUpdatedAt,
-			DocLastCommit:    commentLastCommit,
-			DocBehindCommits: commentBehindCommits,
+			Name: fn.Name.Name,
 		}
 
-		pass.Reportf(fn.Pos(), fnstat.String())
+		if enableTimeInfo {
+			functionLastUpdatedAt, err := stats.CommmentLastUpdatedAt(filename, functionLineNumStart, functionLineNumEnd)
+			if err != nil {
+				errf = err
+				return
+			}
+
+			commentLastUpdatedAt, err := stats.CommmentLastUpdatedAt(filename, docLineNumStart, docLineNumEnd)
+			if err != nil {
+				errf = err
+				return
+			}
+
+			fnstat.TimeStats = &TimeStats{
+				LastUpdatedAt:    functionLastUpdatedAt,
+				DocLastUpdatedAt: commentLastUpdatedAt,
+			}
+		}
+
+		if enableCommitInfo {
+			functionLastCommit, err := stats.LastCommitForRange(filename, functionLineNumStart, functionLineNumEnd)
+			if err != nil {
+				errf = err
+				return
+			}
+
+			commentLastCommit, err := stats.LastCommitForRange(filename, docLineNumStart, docLineNumEnd)
+			if err != nil {
+				errf = err
+				return
+			}
+
+			commentBehindCommits, err := stats.CommitDifference(filename, docLineNumStart, docLineNumEnd, functionLineNumStart, functionLineNumEnd)
+			if err != nil {
+				errf = err
+				return
+			}
+
+			fnstat.CommitStats = &CommitStats{
+				LastCommit:       functionLastCommit,
+				DocLastCommit:    commentLastCommit,
+				DocBehindCommits: commentBehindCommits,
+			}
+		}
+
+		var diagnosticsMessage string
+		if verbose {
+			diagnosticsMessage = fnstat.StringVerbose()
+		} else {
+			diagnosticsMessage = fnstat.String()
+		}
+
+		pass.Reportf(fn.Pos(), diagnosticsMessage)
 	})
 
 	return nil, errf
