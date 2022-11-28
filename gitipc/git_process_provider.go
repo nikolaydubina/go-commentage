@@ -16,14 +16,14 @@ type detailsForFile struct {
 	LastUpdateForLine map[int]time.Time
 }
 
-// ProcessGitProvider makes OS process calls to git to fech data.
-// Utilizes human-readable git blame output.
-// TODO: Caches data per file.
+// ProcessGitProvider makes IPC calls to git to fech data.
+// Parses human-readable git output.
+// Current branch has to be branch of interest (eg, master).
 type ProcessGitProvider struct {
-	Files map[string]detailsForFile
+	fileBlameDetails map[string]detailsForFile
 }
 
-func (s *ProcessGitProvider) processFile(filename string) error {
+func (s *ProcessGitProvider) processBlameFile(filename string) error {
 	cmd := exec.Command("git", "blame", "-t", "-e", filename)
 
 	var stderr, stdout bytes.Buffer
@@ -75,10 +75,10 @@ func (s *ProcessGitProvider) processFile(filename string) error {
 	}
 
 	// store
-	if s.Files == nil {
-		s.Files = make(map[string]detailsForFile)
+	if s.fileBlameDetails == nil {
+		s.fileBlameDetails = make(map[string]detailsForFile)
 	}
-	s.Files[filename] = detailsForFile{
+	s.fileBlameDetails[filename] = detailsForFile{
 		CommitForLine:     commitForLine,
 		LastUpdateForLine: lastUpdateForLine,
 	}
@@ -118,27 +118,45 @@ func parseBlameLine(line string) (ld lineDetails, err error) {
 }
 
 func (s *ProcessGitProvider) CommitForLine(filename string, line int) (string, error) {
-	if _, ok := s.Files[filename]; !ok {
-		if err := s.processFile(filename); err != nil {
+	if _, ok := s.fileBlameDetails[filename]; !ok {
+		if err := s.processBlameFile(filename); err != nil {
 			return "", fmt.Errorf("can not process file: %w", err)
 		}
 	}
-	commit, ok := s.Files[filename].CommitForLine[line]
+	commit, ok := s.fileBlameDetails[filename].CommitForLine[line]
 	if !ok {
 		return "", fmt.Errorf("line(%d) not found", line)
 	}
 	return commit, nil
 }
 
-func (s *ProcessGitProvider) LastUpdateForLine(filename string, line int) (time.Time, error) {
-	if _, ok := s.Files[filename]; !ok {
-		if err := s.processFile(filename); err != nil {
-			return time.Time{}, fmt.Errorf("can not process file: %w", err)
+func (s *ProcessGitProvider) LastUpdateForLine(filename string, line int) (lastUpdatedAt time.Time, err error) {
+	if _, ok := s.fileBlameDetails[filename]; !ok {
+		if err := s.processBlameFile(filename); err != nil {
+			return lastUpdatedAt, fmt.Errorf("can not process file: %w", err)
 		}
 	}
-	ts, ok := s.Files[filename].LastUpdateForLine[line]
+	lastUpdatedAt, ok := s.fileBlameDetails[filename].LastUpdateForLine[line]
 	if !ok {
-		return time.Time{}, fmt.Errorf("line(%d) not found", line)
+		return lastUpdatedAt, fmt.Errorf("line(%d) not found", line)
 	}
-	return ts, nil
+	return lastUpdatedAt, nil
+}
+
+func (s *ProcessGitProvider) NumCommitsFromRoot(commit string) (int, error) {
+	cmd := exec.Command("git", "rev-list", "--count", "--first-parent", commit)
+
+	var stderr, stdout bytes.Buffer
+	cmd.Stderr = &stderr
+	cmd.Stdout = &stdout
+
+	if err := cmd.Run(); err != nil {
+		return 0, fmt.Errorf("can not execute command: %w", err)
+	}
+
+	if stderr.Len() > 0 {
+		return 0, fmt.Errorf("stderr > 0: %s", stderr.String())
+	}
+
+	return strconv.Atoi(strings.TrimSpace(stdout.String()))
 }

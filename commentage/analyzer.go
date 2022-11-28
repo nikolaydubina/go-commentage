@@ -13,20 +13,18 @@ import (
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "commentage",
-	Doc:      "collect details on age of comments and associated code in terms of time and commits",
+	Doc:      "collect details on age(eg, time, commits) of comments and associated code",
 	Run:      run,
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (_ interface{}, errf error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	gitStatsProvider := &gitipc.ProcessGitProvider{}
 	stats := SimpleStatsComputer{
 		GitProider: gitStatsProvider,
 	}
-
-	var errf error
 
 	inspect.Preorder([]ast.Node{&ast.FuncDecl{}}, func(n ast.Node) {
 		fn, ok := n.(*ast.FuncDecl)
@@ -44,6 +42,12 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		functionLineNumEnd := pass.Fset.Position(fn.End()).Line
 
 		functionLastUpdatedAt, err := stats.CommmentLastUpdatedAt(filename, functionLineNumStart, functionLineNumEnd)
+		if err != nil {
+			errf = err
+			return
+		}
+
+		functionLastCommit, err := stats.LastCommitForRange(filename, functionLineNumStart, functionLineNumEnd)
 		if err != nil {
 			errf = err
 			return
@@ -73,10 +77,25 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
+		commentLastCommit, err := stats.LastCommitForRange(filename, docLineNumStart, docLineNumEnd)
+		if err != nil {
+			errf = err
+			return
+		}
+
+		commentBehindCommits, err := stats.CommitDifference(filename, docLineNumStart, docLineNumEnd, functionLineNumStart, functionLineNumEnd)
+		if err != nil {
+			errf = err
+			return
+		}
+
 		fnstat := FunctionStats{
 			Name:             fn.Name.Name,
+			LastCommit:       functionLastCommit,
 			LastUpdatedAt:    functionLastUpdatedAt,
 			DocLastUpdatedAt: commentLastUpdatedAt,
+			DocLastCommit:    commentLastCommit,
+			DocBehindCommits: commentBehindCommits,
 		}
 
 		pass.Reportf(fn.Pos(), fnstat.String())

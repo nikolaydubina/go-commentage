@@ -6,7 +6,7 @@ Inspired by "Clean Code" by Robert C. Martin, this tool collects details on how 
 
 ### Requirements
 
-You need to have `git` of `>=2.37` installed.
+You need to have `git` with version `>=2.37`.
 
 ```bash
 go install github.com/nikolaydubina/go-commentage
