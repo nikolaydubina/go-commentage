@@ -18,13 +18,15 @@ func (s FunctionStats) String() string {
 	var b strings.Builder
 	b.WriteString(`"`)
 	b.WriteString(s.Name)
-	b.WriteString(`": `)
+	b.WriteString(`":`)
 
 	if s.TimeStats != nil {
+		b.WriteString(" ")
 		b.WriteString(s.TimeStats.String())
 	}
 
 	if s.CommitStats != nil {
+		b.WriteString(" ")
 		b.WriteString(s.CommitStats.String())
 	}
 
