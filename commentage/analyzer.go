@@ -19,15 +19,19 @@ var Analyzer = &analysis.Analyzer{
 }
 
 var (
-	enableTimeInfo   bool
-	enableCommitInfo bool
-	verbose          bool
+	enableTimeInfo             bool
+	enableCommitInfo           bool
+	verbose                    bool
+	minCommentNumDaysBehind    float64
+	minCommentNumCommitsBehind int
 )
 
 func init() {
 	Analyzer.Flags.BoolVar(&enableTimeInfo, "time", true, `enable time collection`)
 	Analyzer.Flags.BoolVar(&enableCommitInfo, "commit", false, `enable commit collection`)
 	Analyzer.Flags.BoolVar(&verbose, "verbose", false, `return diagnostics with more details`)
+	Analyzer.Flags.Float64Var(&minCommentNumDaysBehind, "min-days-behind", 0, `comments are at least this number of days behind`)
+	Analyzer.Flags.IntVar(&minCommentNumCommitsBehind, "min-commits-behind", 0, `comments are at least this number of commits behind`)
 }
 
 func run(pass *analysis.Pass) (_ interface{}, errf error) {
@@ -119,6 +123,14 @@ func run(pass *analysis.Pass) (_ interface{}, errf error) {
 				DocLastCommit:    commentLastCommit,
 				DocBehindCommits: commentBehindCommits,
 			}
+		}
+
+		// skip
+		if fnstat.TimeStats != nil && fnstat.DocLastUpdatedBehind().Hours()/24 < minCommentNumDaysBehind {
+			return
+		}
+		if fnstat.CommitStats != nil && fnstat.CommitStats.DocBehindCommits < minCommentNumCommitsBehind {
+			return
 		}
 
 		var diagnosticsMessage string
