@@ -76,12 +76,12 @@ type TimeStats struct {
 	DocLastUpdatedAt time.Time
 }
 
-func (s TimeStats) DocLastUpdatedBehindDays() time.Duration {
+func (s TimeStats) DocLastUpdatedBehind() time.Duration {
 	return s.LastUpdatedAt.Sub(s.DocLastUpdatedAt)
 }
 
 func (s TimeStats) String() string {
-	return fmt.Sprintf("doc_last_updated_behind_days(%.2f)", s.DocLastUpdatedBehindDays().Hours()/24)
+	return fmt.Sprintf("doc_last_updated_behind_days(%.2f)", s.DocLastUpdatedBehind().Hours()/24)
 }
 
 func (s TimeStats) StringVerbose() string {
@@ -89,6 +89,6 @@ func (s TimeStats) StringVerbose() string {
 		"last_updated_at(%v) doc_last_updated_at(%v) doc_last_updated_behind_days(%.2f)",
 		s.LastUpdatedAt.Format(time.RFC3339),
 		s.DocLastUpdatedAt.Format(time.RFC3339),
-		s.DocLastUpdatedBehindDays().Hours()/24,
+		s.DocLastUpdatedBehind().Hours()/24,
 	)
 }
