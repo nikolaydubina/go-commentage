@@ -3,6 +3,9 @@ package commentage
 import (
 	"fmt"
 	"go/ast"
+	"go/parser"
+	"go/token"
+	"log"
 	"strings"
 
 	"github.com/nikolaydubina/go-commentage/gitipc"
@@ -24,12 +27,14 @@ var (
 	verbose                    bool
 	minCommentNumDaysBehind    float64
 	minCommentNumCommitsBehind int
+	skipGenerated              bool
 )
 
 func init() {
 	Analyzer.Flags.BoolVar(&enableTimeInfo, "time", true, `enable time collection`)
 	Analyzer.Flags.BoolVar(&enableCommitInfo, "commit", false, `enable commit collection`)
 	Analyzer.Flags.BoolVar(&verbose, "verbose", false, `return diagnostics with more details`)
+	Analyzer.Flags.BoolVar(&skipGenerated, "skip-generated", true, `skip generated files`)
 	Analyzer.Flags.Float64Var(&minCommentNumDaysBehind, "min-days-behind", 0, `comments are at least this number of days behind`)
 	Analyzer.Flags.IntVar(&minCommentNumCommitsBehind, "min-commits-behind", 0, `comments are at least this number of commits behind`)
 }
@@ -42,7 +47,21 @@ func run(pass *analysis.Pass) (_ interface{}, errf error) {
 		GitProider: gitStatsProvider,
 	}
 
+	fset := token.NewFileSet()
+
 	inspect.Preorder([]ast.Node{&ast.FuncDecl{}}, func(n ast.Node) {
+		if skipGenerated {
+			// TODO: find way to reuse ast.File from analysis inspector
+			fname := pass.Fset.Position(n.Pos()).Filename
+			f, err := parser.ParseFile(fset, fname, nil, parser.ParseComments|parser.PackageClauseOnly)
+			if err != nil {
+				log.Fatalf("failed to parse file %s: %v", fname, err)
+			}
+			if ast.IsGenerated(f) {
+				return
+			}
+		}
+
 		fn, ok := n.(*ast.FuncDecl)
 		if !ok || fn == nil {
 			return
