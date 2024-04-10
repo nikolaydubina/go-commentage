@@ -14,10 +14,7 @@ go install github.com/nikolaydubina/go-commentage@latest
 ```
 
 ```bash
-go-commentage ./...
-```
-
-```txt
+$ go-commentage ./...
 kubernetes/pkg/util/ipset/ipset.go:283:1: "CreateSet": doc_last_updated_behind_days(1336.83)
 kubernetes/pkg/util/ipset/ipset.go:296:1: "createSet": doc_last_updated_behind_days(1603.17)
 kubernetes/pkg/util/ipset/ipset.go:320:1: "AddEntry": doc_last_updated_behind_days(1578.10)
@@ -71,10 +68,7 @@ It is useful to differentiate between updates.
 This can be useful for debugging or exporting for post processing and further data visualization.
 
 ```bash
-go-commentage -verbose -time -commit ./...
-```
-
-```txt
+$ go-commentage -verbose -time -commit ./...
 kubernetes/pkg/util/pod/pod.go:34:1: "PatchPodStatus": last_updated_at(2022-08-02T13:58:08+08:00) doc_last_updated_at(2020-02-27T06:05:33+08:00) doc_last_updated_behind_days(887.33)last_commit(04fcbd721cd3) doc_last_commit(b2528654797e) doc_last_commit_behind(8786)
 kubernetes/pkg/util/pod/pod.go:74:1: "ReplaceOrAppendPodCondition": last_updated_at(2022-11-07T18:57:56+08:00) doc_last_updated_at(2022-11-07T18:57:56+08:00) doc_last_updated_behind_days(0.00)last_commit(4e732e20d05e) doc_last_commit(4e732e20d05e) doc_last_commit_behind(0)
 kubernetes/pkg/util/procfs/procfs_fake.go:28:1: "GetFullContainerName": last_updated_at(2015-11-14T07:47:25+08:00) doc_last_updated_at(2017-04-04T14:16:34+08:00) doc_last_updated_behind_days(-507.27)last_commit(fb576f30c838) doc_last_commit(932ece5cfd0f) doc_last_commit_behind(-10936)
