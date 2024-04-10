@@ -7,6 +7,12 @@
 How far behind are comments compared to code? Are they being updated?
 Inspired by "Clean Code" by Robert C. Martin, this `go vet` compatible tool analyses AST and `git` and collects details on how far comments drift from code they describe.
 
+You need to have `git` with version `>=2.37`.
+
+```bash
+go install github.com/nikolaydubina/go-commentage@latest
+```
+
 ```bash
 go-commentage ./...
 ```
@@ -22,14 +28,6 @@ kubernetes/pkg/util/ipset/ipset.go:364:1: "DestroySet": doc_last_updated_behind_
 kubernetes/pkg/util/ipset/ipset.go:372:1: "DestroyAllSets": doc_last_updated_behind_days(0.00)
 kubernetes/pkg/util/ipset/ipset.go:380:1: "ListSets": doc_last_updated_behind_days(0.00)
 kubernetes/pkg/util/ipset/ipset.go:389:1: "ListEntries": doc_last_updated_behind_days(0.00)
-```
-
-### Requirements
-
-You need to have `git` with version `>=2.37`.
-
-```bash
-go install github.com/nikolaydubina/go-commentage
 ```
 
 ### Filtering
@@ -54,7 +52,7 @@ Measure of how far away in terms of days or commits last update of function body
 
 #### Weighted Age Difference
 
-> **Warning**  
+> [!Warning]  
 > Work in Progress
 
 Code changes happen at various rates.
